@@ -108,6 +108,33 @@ router.get("/texts/:key", requireAuth, (req, res) => {
   res.json(found);
 });
 
+// ── Провера једног одговора ───────────────────────────────────────────────
+// Вежбање иде задатак по задатак: ученик одговори, одмах види да ли је тачно и
+// зашто, па прелази на следећи. Ова рута зато не уписује покушај — покушај се
+// уписује тек кад се област заврши, преко `/attempts`. Да свака провера пише у
+// базу, једно вежбање од тридесет задатака било би тридесет покушаја и просек
+// на прегледу не би значио ништа.
+router.post("/check", requireAuth, (req, res) => {
+  const body = req.body as { questionId?: number; answer?: string };
+  const question = questionById(Number(body.questionId));
+
+  if (!question) {
+    res.status(404).json({ message: "Задатак није пронађен." });
+    return;
+  }
+
+  const answer = typeof body.answer === "string" ? body.answer : "";
+
+  res.json({
+    id: question.id,
+    scored: isScored(question),
+    // Задаци писаног изражавања немају тачан одговор који се може проверити,
+    // па се враћа null — ученик сам процењује уз приказани модел одговора.
+    correct: isScored(question) ? scoreAnswer(question, answer) : null,
+    reveal: revealQuestion(question),
+  });
+});
+
 // ── Предаја одговора ──────────────────────────────────────────────────────
 router.post("/attempts", requireAuth, async (req, res) => {
   try {

@@ -18,6 +18,9 @@ type Props = {
   reveal?: Revealed;
   correct?: boolean;
   earnedPoints?: number;
+  /** Сопствена оцена за задатке писања; null док ученик не одлучи. */
+  selfMark?: boolean | null;
+  onSelfMark?: (correct: boolean) => void;
 };
 
 const parse = (answer: string) =>
@@ -53,14 +56,19 @@ export function QuestionView({
   reveal,
   correct,
   earnedPoints,
+  selfMark,
+  onSelfMark,
 }: Props) {
   const locked = reveal !== undefined;
   const selected = useMemo(() => parse(answer), [answer]);
 
+  // Задатке писања сервер не бодује, па боја оквира прати сопствену оцену.
+  const outcome = question.scored ? correct : (selfMark ?? undefined);
+
   const statusClass =
-    !locked || !question.scored
+    !locked || outcome === undefined
       ? "border-border"
-      : correct
+      : outcome
         ? "border-emerald-500/60"
         : "border-rose-500/60";
 
@@ -77,11 +85,11 @@ export function QuestionView({
           ) : null}
         </div>
         <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
-          {question.scored
-            ? locked && earnedPoints !== undefined
-              ? `${earnedPoints}/${question.points}`
-              : `${question.points} поен${question.points === 1 ? "" : "а"}`
-            : "не бодује се"}
+          {earnedPoints !== undefined
+            ? `${earnedPoints}/${question.points}`
+            : locked && outcome !== undefined
+              ? `${outcome ? question.points : 0}/${question.points}`
+              : `${question.points} поен${question.points === 1 ? "" : "а"}`}
         </span>
       </header>
 
@@ -114,7 +122,14 @@ export function QuestionView({
         reveal={reveal}
       />
 
-      {reveal ? <Reveal question={question} reveal={reveal} /> : null}
+      {reveal ? (
+        <Reveal
+          question={question}
+          reveal={reveal}
+          selfMark={selfMark}
+          onSelfMark={onSelfMark}
+        />
+      ) : null}
     </article>
   );
 }
@@ -432,7 +447,17 @@ function Body({
   }
 }
 
-function Reveal({ question, reveal }: { question: Question; reveal: Revealed }) {
+function Reveal({
+  question,
+  reveal,
+  selfMark,
+  onSelfMark,
+}: {
+  question: Question;
+  reveal: Revealed;
+  selfMark?: boolean | null;
+  onSelfMark?: (correct: boolean) => void;
+}) {
   return (
     <div className="mt-4 space-y-3 rounded-lg bg-muted/40 px-4 py-3 text-[15px] leading-relaxed">
       {question.type === "fill" && reveal.correctFields ? (
@@ -473,6 +498,43 @@ function Reveal({ question, reveal }: { question: Question; reveal: Revealed }) 
 
       {reveal.standard ? (
         <p className="text-sm text-muted-foreground">Образовни стандард: {reveal.standard}</p>
+      ) : null}
+
+      {/*
+        Задатке писања сервер не бодује — не постоји начин да машина процени да
+        ли је образложење прихватљиво. Уместо да остану без поена, ученик их сам
+        оцењује поредећи свој одговор са моделом изнад.
+      */}
+      {!question.scored && onSelfMark ? (
+        <div className="border-t border-border/60 pt-3">
+          <p className="mb-2 text-sm text-muted-foreground">
+            Упореди свој одговор са моделом и сам процени:
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onSelfMark(true)}
+              className={`rounded-lg border px-3 py-1.5 text-sm ${
+                selfMark === true
+                  ? "border-emerald-500 bg-emerald-500/15 text-emerald-300"
+                  : "border-border hover:border-emerald-500/60"
+              }`}
+            >
+              Одговорио сам тачно
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelfMark(false)}
+              className={`rounded-lg border px-3 py-1.5 text-sm ${
+                selfMark === false
+                  ? "border-rose-500 bg-rose-500/15 text-rose-300"
+                  : "border-border hover:border-rose-500/60"
+              }`}
+            >
+              Нисам
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );

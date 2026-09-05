@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { QuestionView } from "@/components/QuestionView";
 import {
@@ -8,17 +8,22 @@ import {
   type AnswerMap,
   type Area,
   type AttemptResult,
+  type CheckResult,
   type Level,
   type Question,
   type SelectedText,
 } from "@/lib/api";
 
 /**
- * Вежбање једне области (или задатака уз један текст).
+ * Вежбање: задатак по задатак, са провером одмах после одговора.
  *
- * Задаци се приказују као радни лист, онако како стоје у збирци — сви одједном,
- * са предајом на крају. Прелазак „питање по питање“ је одбачен зато што задаци
- * у збирци често деле исти одломак, па би се текст понављао на сваком екрану.
+ * Раније је цела област стајала као један радни лист са предајом на крају. То
+ * је личило на тест: ученик би тек после тридесет задатака сазнао шта је
+ * погрешио, а дотад би исту грешку поновио више пута. Овде свака провера одмах
+ * показује тачан одговор и објашњење.
+ *
+ * Покушај се уписује тек на крају области, из скупљених одговора — једно
+ * вежбање је један покушај, па преглед напретка остаје упоредив.
  */
 export default function PracticePage() {
   const search = useSearch();
@@ -30,11 +35,17 @@ export default function PracticePage() {
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [text, setText] = useState<SelectedText | null>(null);
+  const [textOpen, setTextOpen] = useState(true);
+
+  const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<AnswerMap>({});
-  const [result, setResult] = useState<AttemptResult | null>(null);
+  const [checks, setChecks] = useState<Record<number, CheckResult>>({});
+  const [selfMarks, setSelfMarks] = useState<Record<number, boolean>>({});
+
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [finished, setFinished] = useState<AttemptResult | null>(null);
 
   useEffect(() => {
     const query = textKey
@@ -43,8 +54,11 @@ export default function PracticePage() {
 
     setLoading(true);
     setError("");
-    setResult(null);
+    setCurrent(0);
     setAnswers({});
+    setChecks({});
+    setSelfMarks({});
+    setFinished(null);
 
     Promise.all([
       api<Question[]>(`/questions?${query}`),
@@ -58,28 +72,49 @@ export default function PracticePage() {
       .finally(() => setLoading(false));
   }, [level, area, textKey]);
 
-  const reveal = useMemo(() => {
-    if (!result) return null;
-    return new Map(result.reveal.map((r) => [r.id, r]));
-  }, [result]);
+  const question = questions[current];
+  const check = question ? checks[question.id] : undefined;
+  const answered = Object.keys(checks).length;
 
-  const correctById = useMemo(() => {
-    if (!result) return null;
-    return new Map(result.results.map((r) => [r.id, r.correct]));
-  }, [result]);
+  const isCorrect = (q: Question) => {
+    const c = checks[q.id];
+    if (!c) return false;
+    return c.scored ? c.correct === true : selfMarks[q.id] === true;
+  };
 
-  const answered = questions.filter((q) => (answers[q.id] ?? "").trim() !== "").length;
+  const correctCount = questions.filter(isCorrect).length;
 
-  async function submit() {
-    setSending(true);
+  async function checkCurrent() {
+    if (!question) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<CheckResult>("/check", {
+        method: "POST",
+        body: JSON.stringify({
+          questionId: question.id,
+          answer: answers[question.id] ?? "",
+        }),
+      });
+      setChecks((prev) => ({ ...prev, [question.id]: result }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Покушај се уписује једном, кад се вежбање заврши. */
+  async function finish() {
+    setBusy(true);
     setError("");
     try {
       const payload = questions
-        .filter((q) => (answers[q.id] ?? "").trim() !== "")
-        .map((q) => ({ questionId: q.id, answer: answers[q.id]! }));
+        .filter((q) => checks[q.id])
+        .map((q) => ({ questionId: q.id, answer: answers[q.id] ?? "" }));
 
       if (payload.length === 0) {
-        setError("Одговори бар на један задатак пре предаје.");
+        navigate("/vezbanje");
         return;
       }
 
@@ -87,12 +122,12 @@ export default function PracticePage() {
         method: "POST",
         body: JSON.stringify({ answers: payload }),
       });
-      setResult(attempt);
+      setFinished(attempt);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   }
 
@@ -107,64 +142,92 @@ export default function PracticePage() {
       ? LEVEL_LABELS[level]
       : "";
 
+  if (questions.length === 0) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <BackLink onClick={() => navigate("/vezbanje")} />
+        <p className="rounded-xl border border-border bg-card px-5 py-10 text-center text-muted-foreground">
+          У овој области још нема унетих задатака.
+        </p>
+      </div>
+    );
+  }
+
+  if (finished) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <BackLink onClick={() => navigate("/vezbanje")} />
+        <div className="rounded-xl border border-primary/50 bg-primary/10 p-6 text-center">
+          <p className="text-3xl font-semibold">{finished.percentage}%</p>
+          <p className="mt-2 text-muted-foreground">
+            Тачно {finished.score} од {finished.total} бодованих задатака
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Покушај је забележен.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setChecks({});
+                setAnswers({});
+                setSelfMarks({});
+                setCurrent(0);
+                setFinished(null);
+              }}
+              className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Вежбај поново
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/vezbanje")}
+              className="rounded-lg border border-border px-5 py-2 text-sm"
+            >
+              Друга област
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const last = current === questions.length - 1;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6 pb-24">
+    <div className="mx-auto max-w-3xl space-y-5 pb-28">
       <header>
-        <button
-          type="button"
-          onClick={() => navigate("/vezbanje")}
-          className="mb-3 text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Назад на области
-        </button>
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        {subtitle ? <p className="mt-1 text-muted-foreground">{subtitle}</p> : null}
+        <BackLink onClick={() => navigate("/vezbanje")} />
+        <h1 className="text-xl font-semibold">{title}</h1>
+        {subtitle ? <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p> : null}
       </header>
 
-      {result ? (
-        <div
-          className={`rounded-xl border p-5 ${
-            result.percentage >= 50
-              ? "border-emerald-500/50 bg-emerald-500/10"
-              : "border-amber-500/50 bg-amber-500/10"
-          }`}
-        >
-          <p className="text-lg font-semibold">
-            Тачно {result.score} од {result.total} бодованих задатака ({result.percentage}%)
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Испод сваког задатка стоји тачан одговор и објашњење. Задаци писаног
-            изражавања се не бодују — уз њих је дат модел прихватљивог одговора.
-          </p>
+      {text ? (
+        <section className="rounded-xl border border-border bg-card">
           <button
             type="button"
-            onClick={() => {
-              setResult(null);
-              setAnswers({});
-              window.scrollTo({ top: 0 });
-            }}
-            className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            onClick={() => setTextOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left"
           >
-            Вежбај поново
+            <span>
+              <span className="font-medium">{text.title}</span>
+              {text.author ? (
+                <span className="ml-2 text-sm text-muted-foreground">{text.author}</span>
+              ) : null}
+            </span>
+            <span className="shrink-0 text-sm text-muted-foreground">
+              {textOpen ? "сакриј текст" : "прикажи цео текст"}
+            </span>
           </button>
-        </div>
-      ) : null}
-
-      {text ? (
-        <section className="rounded-xl border border-border bg-card p-5 sm:p-6">
-          <h2 className="mb-1 text-lg font-semibold">{text.title}</h2>
-          {text.author ? (
-            <p className="mb-4 text-sm text-muted-foreground">{text.author}</p>
-          ) : null}
-          <div className="space-y-3 text-[15px] leading-relaxed">
-            {text.body.map((paragraph, i) => (
-              <p key={i} className="whitespace-pre-line">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-          {text.note ? (
-            <p className="mt-4 text-sm italic text-muted-foreground">{text.note}</p>
+          {textOpen ? (
+            <div className="space-y-3 border-t border-border px-5 py-4 text-[15px] leading-relaxed">
+              {text.body.map((paragraph, i) => (
+                <p key={i} className="whitespace-pre-line">
+                  {paragraph}
+                </p>
+              ))}
+              {text.note ? (
+                <p className="text-sm italic text-muted-foreground">{text.note}</p>
+              ) : null}
+            </div>
           ) : null}
         </section>
       ) : null}
@@ -175,43 +238,179 @@ export default function PracticePage() {
         </p>
       ) : null}
 
-      {questions.length === 0 ? (
-        <p className="rounded-xl border border-border bg-card px-5 py-10 text-center text-muted-foreground">
-          У овој области још нема унетих задатака.
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {questions.map((q) => (
-            <QuestionView
-              key={q.id}
-              index={q.id}
-              question={q}
-              answer={answers[q.id] ?? ""}
-              onChange={(value) => setAnswers((prev) => ({ ...prev, [q.id]: value }))}
-              reveal={reveal?.get(q.id)}
-              correct={correctById?.get(q.id)}
-            />
-          ))}
-        </div>
-      )}
+      {question ? (
+        <QuestionView
+          key={question.id}
+          index={question.id}
+          question={question}
+          answer={answers[question.id] ?? ""}
+          onChange={(value) =>
+            setAnswers((prev) => ({ ...prev, [question.id]: value }))
+          }
+          reveal={check?.reveal}
+          correct={check?.correct ?? undefined}
+          selfMark={selfMarks[question.id] ?? null}
+          onSelfMark={(value) =>
+            setSelfMarks((prev) => ({ ...prev, [question.id]: value }))
+          }
+        />
+      ) : null}
 
-      {questions.length > 0 && !result ? (
-        <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 backdrop-blur">
-          <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3">
-            <span className="text-sm text-muted-foreground">
-              Одговорено: {answered} / {questions.length}
-            </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          disabled={current === 0}
+          onClick={() => setCurrent((i) => i - 1)}
+          className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-40"
+        >
+          ← Претходни
+        </button>
+
+        {!check ? (
+          <button
+            type="button"
+            onClick={checkCurrent}
+            disabled={busy || (answers[question!.id] ?? "").trim() === ""}
+            className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {busy ? "Проверавам…" : "Провери одговор"}
+          </button>
+        ) : last ? (
+          <button
+            type="button"
+            onClick={finish}
+            disabled={busy}
+            className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+          >
+            {busy ? "Чувам…" : "Заврши вежбање"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCurrent((i) => i + 1)}
+            className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Следећи задатак →
+          </button>
+        )}
+
+        <button
+          type="button"
+          disabled={last}
+          onClick={() => setCurrent((i) => i + 1)}
+          className="rounded-lg border border-border px-4 py-2 text-sm disabled:opacity-40"
+        >
+          Прескочи →
+        </button>
+      </div>
+
+      <ProgressBar
+        questions={questions}
+        current={current}
+        checks={checks}
+        isCorrect={isCorrect}
+        correctCount={correctCount}
+        answered={answered}
+        onJump={setCurrent}
+        onFinish={finish}
+        busy={busy}
+      />
+    </div>
+  );
+}
+
+function BackLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mb-3 text-sm text-muted-foreground hover:text-foreground"
+    >
+      ← Назад на области
+    </button>
+  );
+}
+
+function ProgressBar({
+  questions,
+  current,
+  checks,
+  isCorrect,
+  correctCount,
+  answered,
+  onJump,
+  onFinish,
+  busy,
+}: {
+  questions: Question[];
+  current: number;
+  checks: Record<number, unknown>;
+  isCorrect: (q: Question) => boolean;
+  correctCount: number;
+  answered: number;
+  onJump: (index: number) => void;
+  onFinish: () => void;
+  busy: boolean;
+}) {
+  const percent = Math.round((answered / questions.length) * 100);
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 backdrop-blur">
+      <div className="mx-auto max-w-3xl px-4 py-3">
+        <div className="mb-2 flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Задатак {current + 1} од {questions.length}
+          </span>
+          <span className="text-muted-foreground">
+            тачно {correctCount} / {answered}
+          </span>
+        </div>
+
+        <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+
+        {/* Квадратићи су и преглед и навигација — ученик види шта је промашио
+            и може да се врати на тај задатак. */}
+        <div className="flex flex-wrap gap-1">
+          {questions.map((q, i) => {
+            const done = checks[q.id] !== undefined;
+            const ok = done && isCorrect(q);
+            return (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => onJump(i)}
+                title={`Задатак ${q.id}`}
+                className={`h-2.5 w-5 rounded-sm transition ${
+                  i === current
+                    ? "ring-2 ring-primary ring-offset-1 ring-offset-background"
+                    : ""
+                } ${
+                  !done
+                    ? "bg-muted-foreground/30"
+                    : ok
+                      ? "bg-emerald-500"
+                      : "bg-rose-500"
+                }`}
+              />
+            );
+          })}
+          {answered > 0 ? (
             <button
               type="button"
-              onClick={submit}
-              disabled={sending}
-              className="rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+              onClick={onFinish}
+              disabled={busy}
+              className="ml-auto text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
-              {sending ? "Предајем…" : "Предај одговоре"}
+              заврши и сачувај
             </button>
-          </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

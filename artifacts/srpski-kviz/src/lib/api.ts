@@ -57,6 +57,14 @@ export type Revealed = {
   unacceptable?: string;
 };
 
+/** Одговор на проверу једног задатка; `correct` је null за задатке писања. */
+export type CheckResult = {
+  id: number;
+  scored: boolean;
+  correct: boolean | null;
+  reveal: Revealed;
+};
+
 export type AttemptResult = {
   id: number;
   score: number;
