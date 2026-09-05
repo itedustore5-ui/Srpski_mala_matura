@@ -12,8 +12,8 @@ Napravi Postgres i sačuvaj konekcioni string.
 
 - **Render Postgres** — uzmi *Internal Database URL* ako je servis u istom
   regionu; brže je i ne izlazi na internet.
-- **Supabase** — uzmi **Session pooler** string i dodaj `?sslmode=require` na
-  kraj. Bez toga `pg` odbija vezu.
+- **Supabase** — uzmi **Session pooler** string (port 5432). Radi i bez
+  `?sslmode=require`; dodaj ga samo ako veza bude odbijena.
 
 Tabele se prave same, prilikom prvog deploya (vidi build komandu).
 
@@ -75,7 +75,8 @@ tek pokretanje. Zato stoje kao promenljive, a ne samo kao Renderov runtime port.
 
 ## 4. Prvi admin nalog
 
-Skripta `seed` pravi nalog iz `ADMIN_INITIAL_PASSWORD` (najmanje osam znakova).
+Skripta `seed` pravi nalog iz `ADMIN_INITIAL_PASSWORD` (najmanje šest znakova;
+`reset-password` traži osam).
 Korisničko ime je `admin`, osim ako postaviš `ADMIN_USERNAME`. Skripta je
 idempotentna: ako nalog već postoji, ne dira mu lozinku.
 
@@ -120,7 +121,7 @@ NEW_PASSWORD=nova-lozinka pnpm --filter @workspace/api-server run reset-password
 ```
 
 Bez argumenta, `reset-password` samo ispisuje sve naloge i njihovo stanje —
-korisno kad pijava ne prolazi.
+korisno kad prijava ne prolazi.
 
 ## 5. Migracije
 

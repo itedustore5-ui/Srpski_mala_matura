@@ -6,6 +6,9 @@
  * историјом би овде само отварала могућност да се разиђе са стварним стањем
  * базе, а корист би била никаква.
  */
+// Мора стајати пре увоза `@workspace/db`: тај модул при учитавању тражи
+// DATABASE_URL и баца грешку ако га нема.
+import "../src/lib/load-env";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
