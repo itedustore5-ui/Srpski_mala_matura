@@ -4,10 +4,15 @@ import type { Question, Revealed } from "@/lib/api";
 /**
  * Приказ једног задатка.
  *
+ * Изглед намерно прати збирку: одговори стоје иза празних кружића које ученик
+ * „боји“, повезивање је табела са кружићима у пољима, а подвлачење се ради
+ * кружићима испод речи. Раније су то била дугмад са оквирима; ученик који
+ * вежба из књиге и решава овде видео је два различита задатка, па је морао да
+ * преводи једно у друго уместо да ради.
+ *
  * Иста компонента ради и док се решава и у прегледу решења; разлика је у томе
  * што у прегледу стиже `reveal`. Клијент нигде не одлучује шта је тачно —
- * `correct` долази са сервера, а `reveal` служи само да се покаже шта је
- * требало одговорити.
+ * `correct` долази са сервера.
  */
 
 type Props = {
@@ -30,23 +35,35 @@ const parse = (answer: string) =>
     .filter((p) => p !== "")
     .map(Number);
 
-const Circle = ({ filled }: { filled: boolean }) => (
-  <span
-    className={`mt-[3px] inline-block h-4 w-4 shrink-0 rounded-full border-2 ${
-      filled ? "border-primary bg-primary" : "border-muted-foreground/60"
-    }`}
-  />
-);
+type CircleState = "empty" | "filled" | "correct" | "wrong";
 
-const Box = ({ filled }: { filled: boolean }) => (
-  <span
-    className={`mt-[3px] inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border-2 ${
-      filled ? "border-primary bg-primary" : "border-muted-foreground/60"
-    }`}
-  >
-    {filled ? <span className="text-[10px] leading-none text-primary-foreground">✓</span> : null}
-  </span>
-);
+/** Кружић какав стоји у збирци: празан обод који се боји. */
+function Circle({ state, size = 16 }: { state: CircleState; size?: number }) {
+  const cls =
+    state === "correct"
+      ? "border-emerald-500 bg-emerald-500"
+      : state === "wrong"
+        ? "border-rose-500 bg-rose-500"
+        : state === "filled"
+          ? "border-foreground bg-foreground"
+          : "border-muted-foreground/70";
+
+  return (
+    <span
+      aria-hidden
+      style={{ width: size, height: size }}
+      className={`inline-block shrink-0 rounded-full border-2 ${cls}`}
+    />
+  );
+}
+
+/** Стање кружића: пре предаје прати избор, после предаје тачност. */
+function circleState(chosen: boolean, isCorrect: boolean, locked: boolean): CircleState {
+  if (!locked) return chosen ? "filled" : "empty";
+  if (isCorrect) return "correct";
+  if (chosen) return "wrong";
+  return "empty";
+}
 
 export function QuestionView({
   index,
@@ -62,22 +79,13 @@ export function QuestionView({
   const locked = reveal !== undefined;
   const selected = useMemo(() => parse(answer), [answer]);
 
-  // Задатке писања сервер не бодује, па боја оквира прати сопствену оцену.
+  // Задатке писања сервер не бодује, па исход прати сопствену оцену.
   const outcome = question.scored ? correct : (selfMark ?? undefined);
 
-  const statusClass =
-    !locked || outcome === undefined
-      ? "border-border"
-      : outcome
-        ? "border-emerald-500/60"
-        : "border-rose-500/60";
-
   return (
-    <article className={`rounded-xl border ${statusClass} bg-card p-5 sm:p-6`}>
+    <article className="rounded-xl border border-border bg-card p-5 sm:p-6">
       <header className="mb-4 flex items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary">
-          {index}
-        </span>
+        <span className="text-lg font-semibold tabular-nums">{index}.</span>
         <div className="min-w-0 flex-1">
           <p className="whitespace-pre-line text-[15px] leading-relaxed">{question.question}</p>
           {question.hint ? (
@@ -102,7 +110,7 @@ export function QuestionView({
       ) : null}
 
       {question.passage ? (
-        <blockquote className="mb-4 whitespace-pre-line rounded-lg border-l-2 border-primary/50 bg-muted/40 px-4 py-3 text-[15px] leading-relaxed">
+        <blockquote className="mb-4 whitespace-pre-line border-l-2 border-border pl-4 text-[15px] leading-relaxed">
           {question.passage}
         </blockquote>
       ) : null}
@@ -150,84 +158,54 @@ function Body({
   reveal?: Revealed;
 }) {
   switch (question.type) {
+    // ── Обој кружић испред тачног одговора ────────────────────────────────
     case "single":
+    case "multi": {
+      const multi = question.type === "multi";
       return (
-        <ul className="space-y-2">
+        <ul className="space-y-2.5">
           {(question.options ?? []).map((option, i) => {
-            const chosen = selected[0] === i;
-            const isCorrect = reveal?.correctAnswer === i;
-            return (
-              <li key={i}>
-                <button
-                  type="button"
-                  disabled={locked}
-                  onClick={() => onChange(String(i))}
-                  className={`flex w-full gap-3 rounded-lg border px-3 py-2 text-left text-[15px] leading-relaxed transition ${
-                    locked
-                      ? isCorrect
-                        ? "border-emerald-500/60 bg-emerald-500/10"
-                        : chosen
-                          ? "border-rose-500/60 bg-rose-500/10"
-                          : "border-border"
-                      : chosen
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:border-primary/50"
-                  }`}
-                >
-                  <Circle filled={chosen} />
-                  <span>{option}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      );
-
-    case "multi":
-      return (
-        <ul className="space-y-2">
-          {(question.options ?? []).map((option, i) => {
-            const chosen = selected.includes(i);
-            const isCorrect = reveal?.correctAnswers?.includes(i) ?? false;
+            const chosen = multi ? selected.includes(i) : selected[0] === i;
+            const isCorrect = multi
+              ? (reveal?.correctAnswers?.includes(i) ?? false)
+              : reveal?.correctAnswer === i;
             return (
               <li key={i}>
                 <button
                   type="button"
                   disabled={locked}
                   onClick={() => {
-                    const next = chosen
-                      ? selected.filter((v) => v !== i)
-                      : [...selected, i].sort((a, b) => a - b);
-                    onChange(next.join(","));
+                    if (multi) {
+                      const next = chosen
+                        ? selected.filter((v) => v !== i)
+                        : [...selected, i].sort((a, b) => a - b);
+                      onChange(next.join(","));
+                    } else {
+                      onChange(String(i));
+                    }
                   }}
-                  className={`flex w-full gap-3 rounded-lg border px-3 py-2 text-left text-[15px] leading-relaxed transition ${
-                    locked
-                      ? isCorrect
-                        ? "border-emerald-500/60 bg-emerald-500/10"
-                        : chosen
-                          ? "border-rose-500/60 bg-rose-500/10"
-                          : "border-border"
-                      : chosen
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:border-primary/50"
-                  }`}
+                  className="flex w-full items-start gap-3 text-left text-[15px] leading-relaxed disabled:cursor-default"
                 >
-                  <Box filled={chosen} />
-                  <span>{option}</span>
+                  <span className="mt-[3px]">
+                    <Circle state={circleState(chosen, isCorrect, locked)} />
+                  </span>
+                  <span className="whitespace-pre-line">{option}</span>
                 </button>
               </li>
             );
           })}
         </ul>
       );
+    }
 
+    // ── Допуни ────────────────────────────────────────────────────────────
     case "fill": {
       const parts = answer.split("|");
       return (
         <div className="space-y-3">
           {(question.fields ?? []).map((field, i) => (
-            <label key={i} className="block">
-              <span className="mb-1 block text-sm text-muted-foreground">{field.label}</span>
+            <label key={i} className="flex flex-wrap items-baseline gap-2">
+              <span className="text-[15px]">{field.label}:</span>
               <input
                 type="text"
                 disabled={locked}
@@ -238,7 +216,7 @@ function Body({
                   next[i] = e.target.value;
                   onChange(next.join("|"));
                 }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[15px] outline-none focus:border-primary disabled:opacity-70"
+                className="min-w-[12rem] flex-1 border-0 border-b border-muted-foreground/60 bg-transparent px-1 py-0.5 text-[15px] outline-none focus:border-foreground disabled:opacity-70"
               />
             </label>
           ))}
@@ -246,73 +224,138 @@ function Body({
       );
     }
 
+    // ── Повежи: табела са кружићима, као у збирци ─────────────────────────
     case "match": {
       const right = question.rightItems ?? [];
+      const left = question.leftItems ?? [];
+
+      // Са више од пет колона табела не стаје на екран, па се тада бира
+      // из листе. Збирка у таквим задацима такође не црта табелу.
+      if (right.length > 5) {
+        return (
+          <div className="space-y-2">
+            {left.map((item, i) => (
+              <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="flex-1 whitespace-pre-line text-[15px] leading-relaxed">
+                  {item}
+                </span>
+                <select
+                  disabled={locked}
+                  value={
+                    selected[i] === undefined || Number.isNaN(selected[i])
+                      ? ""
+                      : String(selected[i])
+                  }
+                  onChange={(e) => {
+                    const next = [...selected];
+                    while (next.length < left.length) next.push(-1);
+                    next[i] = Number(e.target.value);
+                    onChange(next.join(","));
+                  }}
+                  className={`rounded-lg border bg-background px-2 py-1.5 text-sm outline-none sm:w-72 ${
+                    locked && reveal?.correctPairs
+                      ? reveal.correctPairs[i] === selected[i]
+                        ? "border-emerald-500"
+                        : "border-rose-500"
+                      : "border-border focus:border-foreground"
+                  }`}
+                >
+                  <option value="">— изабери —</option>
+                  {right.map((option, j) => (
+                    <option key={j} value={j}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            {question.extraRight ? (
+              <p className="text-sm text-muted-foreground">
+                Једна ставка из десне колоне је вишак.
+              </p>
+            ) : null}
+          </div>
+        );
+      }
+
       return (
-        <div className="space-y-2">
-          {(question.leftItems ?? []).map((left, i) => (
-            <div
-              key={i}
-              className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2 sm:flex-row sm:items-center"
-            >
-              <span className="flex-1 whitespace-pre-line text-[15px] leading-relaxed">{left}</span>
-              <select
-                disabled={locked}
-                value={selected[i] === undefined || Number.isNaN(selected[i]) ? "" : String(selected[i])}
-                onChange={(e) => {
-                  const next = [...selected];
-                  while (next.length < (question.leftItems?.length ?? 0)) next.push(-1);
-                  next[i] = Number(e.target.value);
-                  onChange(next.join(","));
-                }}
-                className={`rounded-lg border bg-background px-2 py-1.5 text-sm outline-none sm:w-64 ${
-                  locked && reveal?.correctPairs
-                    ? reveal.correctPairs[i] === selected[i]
-                      ? "border-emerald-500/60"
-                      : "border-rose-500/60"
-                    : "border-border focus:border-primary"
-                }`}
-              >
-                <option value="">— изабери —</option>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] border-collapse text-[15px]">
+            <thead>
+              <tr className="text-sm">
+                <th className="border border-border px-3 py-2 text-left font-medium" />
                 {right.map((option, j) => (
-                  <option key={j} value={j}>
+                  <th key={j} className="border border-border px-3 py-2 font-medium">
                     {option}
-                  </option>
+                  </th>
                 ))}
-              </select>
-            </div>
-          ))}
+              </tr>
+            </thead>
+            <tbody>
+              {left.map((item, i) => (
+                <tr key={i}>
+                  <td className="border border-border px-3 py-2 leading-relaxed">{item}</td>
+                  {right.map((_, j) => {
+                    const chosen = selected[i] === j;
+                    const isCorrect = reveal?.correctPairs?.[i] === j;
+                    return (
+                      <td key={j} className="border border-border px-3 py-2 text-center">
+                        <button
+                          type="button"
+                          disabled={locked}
+                          onClick={() => {
+                            const next = [...selected];
+                            while (next.length < left.length) next.push(-1);
+                            next[i] = j;
+                            onChange(next.join(","));
+                          }}
+                          className="disabled:cursor-default"
+                          aria-label={right[j]}
+                        >
+                          <Circle state={circleState(chosen, isCorrect, locked)} />
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
           {question.extraRight ? (
-            <p className="text-sm text-muted-foreground">Једна ставка из десне колоне је вишак.</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Једна ставка је вишак.
+            </p>
           ) : null}
         </div>
       );
     }
 
+    // ── Поређај ───────────────────────────────────────────────────────────
     case "order": {
       const items = question.items ?? [];
       return (
         <div className="space-y-2">
           {items.map((item, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
-            >
+            <div key={i} className="flex items-center gap-3">
               <select
                 disabled={locked}
-                value={selected[i] === undefined || Number.isNaN(selected[i]) ? "" : String(selected[i])}
+                value={
+                  selected[i] === undefined || Number.isNaN(selected[i])
+                    ? ""
+                    : String(selected[i])
+                }
                 onChange={(e) => {
                   const next = [...selected];
                   while (next.length < items.length) next.push(-1);
                   next[i] = Number(e.target.value);
                   onChange(next.join(","));
                 }}
-                className={`w-16 rounded-lg border bg-background px-2 py-1.5 text-sm outline-none ${
+                className={`w-16 rounded-md border bg-background px-2 py-1 text-center text-sm outline-none ${
                   locked && reveal?.correctOrder
                     ? reveal.correctOrder[i] === selected[i]
-                      ? "border-emerald-500/60"
-                      : "border-rose-500/60"
-                    : "border-border focus:border-primary"
+                      ? "border-emerald-500"
+                      : "border-rose-500"
+                    : "border-muted-foreground/60 focus:border-foreground"
                 }`}
               >
                 <option value="">—</option>
@@ -322,13 +365,16 @@ function Body({
                   </option>
                 ))}
               </select>
-              <span className="flex-1 whitespace-pre-line text-[15px] leading-relaxed">{item}</span>
+              <span className="flex-1 whitespace-pre-line text-[15px] leading-relaxed">
+                {item}
+              </span>
             </div>
           ))}
         </div>
       );
     }
 
+    // ── Тачно / нетачно ───────────────────────────────────────────────────
     case "tf": {
       const values = answer.split(",").map((v) => v.trim().toUpperCase());
       const trueLabel = question.trueLabel ?? "Тачно";
@@ -337,10 +383,16 @@ function Body({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[420px] border-collapse text-[15px]">
             <thead>
-              <tr className="text-sm text-muted-foreground">
-                <th className="border border-border px-3 py-2 text-left font-medium">Тврдња</th>
-                <th className="w-24 border border-border px-2 py-2 font-medium">{trueLabel}</th>
-                <th className="w-24 border border-border px-2 py-2 font-medium">{falseLabel}</th>
+              <tr className="text-sm">
+                <th className="border border-border px-3 py-2 text-left font-medium">
+                  Тврдња
+                </th>
+                <th className="w-28 border border-border px-2 py-2 font-medium">
+                  {trueLabel}
+                </th>
+                <th className="w-28 border border-border px-2 py-2 font-medium">
+                  {falseLabel}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -348,7 +400,9 @@ function Body({
                 const expected = reveal?.correct?.[i];
                 return (
                   <tr key={i}>
-                    <td className="border border-border px-3 py-2 leading-relaxed">{statement}</td>
+                    <td className="border border-border px-3 py-2 leading-relaxed">
+                      {statement}
+                    </td>
                     {(["T", "N"] as const).map((flag) => {
                       const chosen = values[i] === flag;
                       const isCorrect =
@@ -360,23 +414,16 @@ function Body({
                             disabled={locked}
                             onClick={() => {
                               const next = [...values];
-                              while (next.length < (question.statements?.length ?? 0)) next.push("");
+                              while (next.length < (question.statements?.length ?? 0))
+                                next.push("");
                               next[i] = flag;
                               onChange(next.join(","));
                             }}
-                            className={`inline-flex h-6 w-6 items-center justify-center rounded-full border-2 ${
-                              locked
-                                ? isCorrect
-                                  ? "border-emerald-500 bg-emerald-500"
-                                  : chosen
-                                    ? "border-rose-500 bg-rose-500"
-                                    : "border-muted-foreground/50"
-                                : chosen
-                                  ? "border-primary bg-primary"
-                                  : "border-muted-foreground/50 hover:border-primary"
-                            }`}
+                            className="disabled:cursor-default"
                             aria-label={flag === "T" ? trueLabel : falseLabel}
-                          />
+                          >
+                            <Circle state={circleState(chosen, isCorrect, locked)} />
+                          </button>
                         </td>
                       );
                     })}
@@ -389,16 +436,23 @@ function Body({
       );
     }
 
-    case "pick":
+    // ── Подвуци / обој кружиће испод речи ─────────────────────────────────
+    case "pick": {
+      const tokens = question.tokens ?? [];
+      // Дуги жетони су реченице или стихови и иду један испод другог; кратки
+      // су речи или гласови и теку у реду, као у књизи.
+      const asLines = tokens.some((t) => t.length > 40);
+
       return (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Кликни на део текста да га означиш.
+        <div>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Обој кружић испод дела текста који означаваш.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {(question.tokens ?? []).map((token, i) => {
+          <div className={asLines ? "space-y-2" : "flex flex-wrap items-end gap-x-3 gap-y-3"}>
+            {tokens.map((token, i) => {
               const chosen = selected.includes(i);
               const isCorrect = reveal?.correctTokens?.includes(i) ?? false;
+              const state = circleState(chosen, isCorrect, locked);
               return (
                 <button
                   key={i}
@@ -410,26 +464,28 @@ function Body({
                       : [...selected, i].sort((a, b) => a - b);
                     onChange(next.join(","));
                   }}
-                  className={`rounded-lg border px-2.5 py-1.5 text-left text-[15px] leading-relaxed transition ${
-                    locked
-                      ? isCorrect
-                        ? "border-emerald-500/60 bg-emerald-500/10"
-                        : chosen
-                          ? "border-rose-500/60 bg-rose-500/10"
-                          : "border-border"
-                      : chosen
-                        ? "border-primary bg-primary/10 underline decoration-primary decoration-2 underline-offset-4"
-                        : "border-border hover:border-primary/50"
-                  }`}
+                  className={`flex ${
+                    asLines ? "w-full flex-row items-start gap-3" : "flex-col items-center gap-1"
+                  } text-left disabled:cursor-default`}
                 >
-                  {token}
+                  {asLines ? <span className="mt-[3px]"><Circle state={state} /></span> : null}
+                  <span
+                    className={`text-[15px] leading-relaxed ${
+                      chosen ? "underline decoration-2 underline-offset-4" : ""
+                    }`}
+                  >
+                    {token}
+                  </span>
+                  {asLines ? null : <Circle state={state} size={13} />}
                 </button>
               );
             })}
           </div>
         </div>
       );
+    }
 
+    // ── Слободан одговор ──────────────────────────────────────────────────
     case "open":
       return (
         <textarea
@@ -438,7 +494,7 @@ function Body({
           onChange={(e) => onChange(e.target.value)}
           rows={question.lines ?? 5}
           placeholder="Овде напиши свој одговор."
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[15px] leading-relaxed outline-none focus:border-primary disabled:opacity-70"
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[15px] leading-relaxed outline-none focus:border-foreground disabled:opacity-70"
         />
       );
 
@@ -459,16 +515,14 @@ function Reveal({
   onSelfMark?: (correct: boolean) => void;
 }) {
   return (
-    <div className="mt-4 space-y-3 rounded-lg bg-muted/40 px-4 py-3 text-[15px] leading-relaxed">
+    <div className="mt-5 space-y-3 rounded-lg bg-muted/40 px-4 py-3 text-[15px] leading-relaxed">
       {question.type === "fill" && reveal.correctFields ? (
         <div>
           <p className="mb-1 text-sm font-medium text-muted-foreground">Тачан одговор</p>
           <ul className="list-inside list-disc">
             {reveal.correctFields.map((variants, i) => (
               <li key={i}>
-                {question.fields?.[i]?.label
-                  ? `${question.fields[i]!.label} `
-                  : ""}
+                {question.fields?.[i]?.label ? `${question.fields[i]!.label}: ` : ""}
                 {variants.join(" / ")}
               </li>
             ))}
@@ -510,27 +564,21 @@ function Reveal({
           <p className="mb-2 text-sm text-muted-foreground">
             Упореди свој одговор са моделом и сам процени:
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-4">
             <button
               type="button"
               onClick={() => onSelfMark(true)}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${
-                selfMark === true
-                  ? "border-emerald-500 bg-emerald-500/15 text-emerald-300"
-                  : "border-border hover:border-emerald-500/60"
-              }`}
+              className="flex items-center gap-2 text-sm"
             >
+              <Circle state={selfMark === true ? "correct" : "empty"} />
               Одговорио сам тачно
             </button>
             <button
               type="button"
               onClick={() => onSelfMark(false)}
-              className={`rounded-lg border px-3 py-1.5 text-sm ${
-                selfMark === false
-                  ? "border-rose-500 bg-rose-500/15 text-rose-300"
-                  : "border-border hover:border-rose-500/60"
-              }`}
+              className="flex items-center gap-2 text-sm"
             >
+              <Circle state={selfMark === false ? "wrong" : "empty"} />
               Нисам
             </button>
           </div>

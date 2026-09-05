@@ -121,6 +121,11 @@ dok se ne unesu zvanični — učeniku bi izmišljen test delovao kao original.
 - **Kružići u skeniranoj zbirci nisu pouzdani** — vidi gore.
 - **Skenirani PDF nema tekstualni sloj.** `pdftotext` vraća praznu stranu;
   strane se moraju renderovati u sliku (PyMuPDF) i čitati vizuelno.
+- **Lokalni build iz Git Basha traži `MSYS_NO_PATHCONV=1`.** Git Bash pretvara
+  `BASE_PATH=/` u Windows putanju, pa Vite u `index.html` upiše
+  `src="/Program Files/Git/assets/..."`. Stranica je onda bela, a u konzoli
+  stoji „Expected a JavaScript-or-Wasm module script… MIME type text/html“ —
+  server na tu putanju vrati `index.html`. Na Renderu (Linux) toga nema.
 - **Vite dodaje `crossorigin`** na `<script>` i `<link>`, pa browser šalje
   `Origin` i za fajlove sa istog domena.
 - **pnpm-workspace isključuje platforme osim linux-x64 i win32-x64.** Win32-x64
