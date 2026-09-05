@@ -73,6 +73,7 @@ artifacts/api-server/     Express 5, Drizzle, HMAC-SHA256 tokeni
 artifacts/srpski-kviz/    React 19 + Vite, App.tsx + pages/
   public/images/            prilozi uz zadatke (plakat, obrazac, rečnik)
 lib/db/                   Drizzle šema + SQL migracije
+docs/DEPLOY.md            Render + Postgres, korak po korak
 ```
 
 ## Tipovi zadataka
