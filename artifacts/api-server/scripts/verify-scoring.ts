@@ -80,6 +80,42 @@ for (const q of questions) {
   }
 }
 
+// ── 1б. Мешање писама ──────────────────────────────────────────────────────
+// Текст који види ученик мора бити ћирилички. Латинично слово усред ћириличке
+// речи је увек грешка у куцању, а на екрану се готово не примећује: „прште“ и
+// „пršte“ изгледају скоро исто, а поређење одговора их разликује.
+const LATIN_IN_CYRILLIC = /[a-zA-Zšđčćž]/;
+
+function checkScript(q: Question, label: string, value: string) {
+  for (const word of value.split(/[\s ]+/)) {
+    const hasCyrillic = /[Ѐ-ӿ]/.test(word);
+    if (hasCyrillic && LATIN_IN_CYRILLIC.test(word)) {
+      fail(q, `${label}: реч „${word}“ меша ћирилицу и латиницу`);
+    }
+  }
+}
+
+for (const q of questions) {
+  checkScript(q, "захтев", q.question);
+  checkScript(q, "објашњење", q.explanation);
+  if (q.passage) checkScript(q, "одломак", q.passage);
+  if (q.type === "single" || q.type === "multi")
+    q.options.forEach((o, i) => checkScript(q, `одговор ${i + 1}`, o));
+  if (q.type === "pick") q.tokens.forEach((t, i) => checkScript(q, `део ${i + 1}`, t));
+  if (q.type === "tf") q.statements.forEach((s, i) => checkScript(q, `тврдња ${i + 1}`, s));
+  if (q.type === "match") {
+    q.leftItems.forEach((t, i) => checkScript(q, `лева ставка ${i + 1}`, t));
+    q.rightItems.forEach((t, i) => checkScript(q, `десна ставка ${i + 1}`, t));
+  }
+  if (q.type === "order") q.items.forEach((t, i) => checkScript(q, `ставка ${i + 1}`, t));
+  if (q.type === "fill")
+    q.fields.forEach((f, i) => {
+      checkScript(q, `поље ${i + 1}`, f.label);
+      f.accepted.forEach((a) => checkScript(q, `прихватљив одговор ${i + 1}`, a));
+    });
+  if (q.type === "open") checkScript(q, "модел одговора", q.acceptable);
+}
+
 // ── 2. Бодовање ────────────────────────────────────────────────────────────
 function correctAnswerFor(q: Question): string | null {
   switch (q.type) {
