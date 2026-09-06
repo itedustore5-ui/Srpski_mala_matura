@@ -25,7 +25,8 @@ Ovde stoje zadaci koji su iz nekog razloga ostali neuneti, da se ne izgube.
 
 | Zadatak | Strana | Šta nedostaje | Zašto |
 |---|---|---|---|
-| 144 | 64–65 | `passage` (dva odlomka) | Pisanje tog teksta tri puta zaredom prekinuo je filter sadržaja na strani modela. Zahtev, ponuđeni odgovori i tačni odgovori su već upisani — stoje zakomentarisani u `napredni-citanje.ts`. |
+| 144 | 64–65 | `passage` (dva odlomka) | Pisanje tog teksta prekinuo je filter sadržaja na strani modela. Zahtev, ponuđeni odgovori i tačni odgovori su već upisani — stoje zakomentarisani u `napredni-citanje.ts`, sa označenim mestom za lepljenje. |
+| Drugi deo, tekst 1 (zadaci 213–237) | 101–109 | ceo odlomak + svi zadaci uz njega | Isti razlog. Slot za tekst stoji zakomentarisan u `data/texts.ts` pod ključem `gospodja-ministarka`, a mesto za zadatke u `questions/drugi-deo.ts`. |
 
 ### Kako dopuniti preskočeni zadatak
 

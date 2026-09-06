@@ -11,6 +11,7 @@
 import { questions } from "../src/data/questions";
 import { AREAS, LEVELS, isScored, type Question } from "../src/data/types";
 import { sanitizeQuestion, scoreAnswer } from "../src/lib/scoring";
+import { textByKey, textsAwaitingBody } from "../src/data/texts";
 
 const problems: string[] = [];
 const fail = (q: Question, message: string) =>
@@ -28,6 +29,10 @@ for (const q of questions) {
   if (!levelKeys.has(q.level)) fail(q, `непознат ниво „${q.level}“`);
   if (!areaKeys.has(q.area)) fail(q, `непозната област „${q.area}“`);
   if (q.part === 2 && !q.textKey) fail(q, "задатак другог дела нема textKey");
+  // Задатак који показује на текст којег нема остао би без одломка, а на екрану
+  // би то изгледало само као задатак без увода — не као грешка.
+  if (q.textKey && !textByKey(q.textKey))
+    fail(q, `нема текста са кључем „${q.textKey}“ у texts.ts`);
   if (q.points <= 0) fail(q, "број поена мора бити већи од нуле");
   if (!q.question.trim()) fail(q, "нема текста захтева");
   if (!q.explanation.trim()) fail(q, "нема објашњења");
@@ -231,6 +236,14 @@ for (const level of LEVELS) {
   console.log(`  ${level.label} — ${parts.join(", ")}`);
 }
 console.log(`  Други део (уз текстове): ${questions.filter((q) => q.part === 2).length}`);
+
+// Текст без тела није грешка у подацима — задаци уз њега су исправни и боде се
+// нормално — али јесте рупа коју треба видети без отварања фајлова.
+const awaiting = textsAwaitingBody();
+if (awaiting.length > 0) {
+  console.log("\nТекстови који чекају да се препишу:");
+  for (const t of awaiting) console.log(`  - ${t.title} (${t.note ?? t.key})`);
+}
 
 if (problems.length > 0) {
   console.error(`\nНађено ${problems.length} проблема:`);
