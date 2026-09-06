@@ -35,6 +35,18 @@ const parse = (answer: string) =>
     .filter((p) => p !== "")
     .map(Number);
 
+/**
+ * Код `pick` задатака жетони већ исписују цео текст, па би одломак изнад њих
+ * приказао исту реченицу двапут — ученик тражи где је разлика, а разлике нема.
+ * Одломак остаје само кад носи нешто чега у жетонима нема (увод, наслов).
+ */
+function showPassage(question: Question): boolean {
+  if (!question.passage) return false;
+  if (question.type !== "pick") return true;
+  const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+  return flat(question.tokens?.join(" ") ?? "") !== flat(question.passage);
+}
+
 type CircleState = "empty" | "filled" | "correct" | "wrong";
 
 /** Кружић какав стоји у збирци: празан обод који се боји. */
@@ -109,7 +121,7 @@ export function QuestionView({
         />
       ) : null}
 
-      {question.passage ? (
+      {showPassage(question) ? (
         <blockquote className="mb-4 whitespace-pre-line border-l-2 border-border pl-4 text-[15px] leading-relaxed">
           {question.passage}
         </blockquote>

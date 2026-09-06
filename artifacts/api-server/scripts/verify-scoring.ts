@@ -84,13 +84,18 @@ for (const q of questions) {
 // Текст који види ученик мора бити ћирилички. Латинично слово усред ћириличке
 // речи је увек грешка у куцању, а на екрану се готово не примећује: „прште“ и
 // „пršte“ изгледају скоро исто, а поређење одговора их разликује.
-const LATIN_IN_CYRILLIC = /[a-zA-Zšđčćž]/;
+// Провера тражи слово из *било ког* другог писма, не само латинице: при
+// преписивању зна да упадне и знак који није ни ћирилица ни латиница, а на
+// екрану се ни он не примети.
+const isLetter = (ch: string) => /\p{L}/u.test(ch);
+const isCyrillic = (ch: string) => /\p{Script=Cyrillic}/u.test(ch);
 
 function checkScript(q: Question, label: string, value: string) {
   for (const word of value.split(/[\s ]+/)) {
-    const hasCyrillic = /[Ѐ-ӿ]/.test(word);
-    if (hasCyrillic && LATIN_IN_CYRILLIC.test(word)) {
-      fail(q, `${label}: реч „${word}“ меша ћирилицу и латиницу`);
+    if (![...word].some(isCyrillic)) continue;
+    const stray = [...word].find((ch) => isLetter(ch) && !isCyrillic(ch));
+    if (stray) {
+      fail(q, `${label}: реч „${word}“ меша ћирилицу и слово „${stray}“ из другог писма`);
     }
   }
 }
