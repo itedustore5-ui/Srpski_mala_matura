@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { api, AREA_SHORT, type Catalog } from "@/lib/api";
 
-/** Први део збирке: три нивоа, у сваком четири области. Испод, други део. */
+/**
+ * Први део збирке: три нивоа, у сваком четири области.
+ *
+ * Други део је свој екран (`TextsPage`). Док су стајали заједно, текстови су
+ * били испод дванаест поља — на дну странице до кога се ретко стизало.
+ */
 export default function CatalogPage() {
   const [, navigate] = useLocation();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -24,8 +29,15 @@ export default function CatalogPage() {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="mx-auto max-w-3xl space-y-10">
       <header>
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="mb-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Почетна
+        </button>
         <h1 className="text-2xl font-semibold">Први део — задаци по нивоима</h1>
         <p className="mt-1 text-muted-foreground">
           Задаци су, као и у збирци, распоређени на основни, средњи и напредни
@@ -85,36 +97,16 @@ export default function CatalogPage() {
         </section>
       ))}
 
-      <section>
-        <h2 className="mb-1 text-lg font-semibold">Други део — одабрани текстови</h2>
-        <p className="mb-3 text-muted-foreground">
-          Уз сваки текст иде низ задатака из различитих области и нивоа.
+      <button
+        type="button"
+        onClick={() => navigate("/vezbanje/tekstovi")}
+        className="w-full rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/60"
+      >
+        <p className="font-medium">Други део — одабрани текстови →</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {catalog.texts.length} текстова, уз сваки низ задатака
         </p>
-        {catalog.texts.length === 0 ? (
-          <p className="rounded-xl border border-border bg-card px-5 py-8 text-center text-muted-foreground">
-            Текстови другог дела још нису унети.
-          </p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {catalog.texts.map((text) => (
-              <button
-                key={text.key}
-                type="button"
-                onClick={() => navigate(`/vezbanje/tekst?text=${encodeURIComponent(text.key)}`)}
-                className="rounded-xl border border-border bg-card p-4 text-left transition hover:border-primary/60"
-              >
-                <p className="font-medium">{text.title}</p>
-                {text.author ? (
-                  <p className="mt-0.5 text-sm text-muted-foreground">{text.author}</p>
-                ) : null}
-                <p className="mt-3 text-sm text-muted-foreground">
-                  {text.questionCount} задатака
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+      </button>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { Route, Switch, useLocation } from "wouter";
 import NotFound from "@/pages/not-found";
 import DashboardPage from "@/pages/DashboardPage";
 import CatalogPage from "@/pages/CatalogPage";
+import TextsPage from "@/pages/TextsPage";
 import PracticePage from "@/pages/PracticePage";
 import ScoreboardPage from "@/pages/ScoreboardPage";
 import AdminPage from "@/pages/AdminPage";
@@ -98,11 +99,27 @@ function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   );
 }
 
-const NAV = [
-  { href: "/", label: "Почетна" },
-  { href: "/vezbanje", label: "Вежбање" },
-  { href: "/testovi", label: "Тестови" },
-  { href: "/rang-lista", label: "Ранг-листа" },
+/**
+ * Трака прати поделу збирке: два дела и цео тест. Раније је стајало „Вежбање“,
+ * иза кога су била оба дела — из назива се није видело шта се где налази.
+ *
+ * `owns` набраја екране који припадају ставци, уместо да се гледа почетак
+ * путање: `/vezbanje/tekstovi` почиње са `/vezbanje`, па би се палила оба
+ * линка, а `/vezbanje/tekst` (задаци уз текст) припада другом делу иако личи
+ * на први.
+ */
+type NavLink = { href: string; label: string; owns: string[] };
+
+const NAV: NavLink[] = [
+  { href: "/", label: "Почетна", owns: ["/"] },
+  { href: "/vezbanje", label: "Први део", owns: ["/vezbanje", "/vezbanje/oblast"] },
+  {
+    href: "/vezbanje/tekstovi",
+    label: "Други део",
+    owns: ["/vezbanje/tekstovi", "/vezbanje/tekst"],
+  },
+  { href: "/testovi", label: "Цео тест", owns: ["/testovi", "/testovi/test"] },
+  { href: "/rang-lista", label: "Ранг-листа", owns: ["/rang-lista"] },
 ];
 
 function Shell({
@@ -115,9 +132,13 @@ function Shell({
   children: React.ReactNode;
 }) {
   const [location, navigate] = useLocation();
-  const links =
+  const links: NavLink[] =
     user.role === "admin"
-      ? [...NAV, { href: "/admin", label: "Админ" }, { href: "/studija", label: "Студија" }]
+      ? [
+          ...NAV,
+          { href: "/admin", label: "Админ", owns: ["/admin"] },
+          { href: "/studija", label: "Студија", owns: ["/studija"] },
+        ]
       : NAV;
 
   return (
@@ -127,8 +148,7 @@ function Shell({
           <span className="font-semibold">Српски — мала матура</span>
           <nav className="flex flex-wrap gap-1">
             {links.map((link) => {
-              const active =
-                link.href === "/" ? location === "/" : location.startsWith(link.href);
+              const active = link.owns.includes(location);
               return (
                 <button
                   key={link.href}
@@ -178,6 +198,7 @@ export default function App() {
       <Switch>
         <Route path="/">{() => <DashboardPage user={auth.user!} />}</Route>
         <Route path="/vezbanje">{() => <CatalogPage />}</Route>
+        <Route path="/vezbanje/tekstovi">{() => <TextsPage />}</Route>
         <Route path="/vezbanje/oblast">{() => <PracticePage />}</Route>
         <Route path="/vezbanje/tekst">{() => <PracticePage />}</Route>
         <Route path="/testovi">{() => <ExamsPage />}</Route>

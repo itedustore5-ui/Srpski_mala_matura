@@ -294,7 +294,11 @@ router.get("/dashboard", requireAuth, async (req, res) => {
     bestScore: attempts.reduce((max, a) => Math.max(max, a.percentage), 0),
     lastScore: attempts[0]?.percentage ?? null,
     solvedCount: solved.size,
-    questionCount: questions.filter((q) => q.part === 1).length,
+    // Урађени задаци се броје кроз све покушаје вежбања, а они обухватају и
+    // други део. Именилац мора да буде исти скуп: док је стајало само
+    // `part === 1`, ученик који ради задатке уз текстове могао је да пређе
+    // укупан број.
+    questionCount: questions.length,
     levelScores: LEVELS.map((level) => {
       const matching = attempts.filter((a) => a.level === level.key);
       return {
