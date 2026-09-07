@@ -11,8 +11,12 @@
     "seed": "tsx scripts/seed.ts",
     "verify:scoring": "tsx scripts/verify-scoring.ts",
     "verify:exams": "tsx scripts/verify-exams.ts",
+    "verify:study": "tsx scripts/verify-study.ts",
+    "verify:tekst": "tsx scripts/verify-tekst.ts",
     "migrate": "tsx scripts/migrate.ts",
-    "reset-password": "tsx scripts/reset-password.ts"
+    "reset-password": "tsx scripts/reset-password.ts",
+    "backup": "tsx scripts/backup.ts",
+    "probni-prolaz": "tsx scripts/probni-prolaz.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",

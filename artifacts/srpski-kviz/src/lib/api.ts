@@ -87,6 +87,9 @@ export type ExamAttemptResult = {
 };
 
 export type Catalog = {
+  /** Контролна грана не вежба; каталог се и тада приказује, али са разлогом. */
+  practiceAllowed: boolean;
+  practiceReason: string | null;
   levels: {
     key: Level;
     label: string;
@@ -232,3 +235,78 @@ export const LEVEL_LABELS: Record<Level, string> = {
  * не преда своје решење.
  */
 export type AnswerMap = Record<number, string>;
+
+// ── Истраживање ────────────────────────────────────────────────────────────
+// Апликација уз улогу алата за учење служи и као инструмент мерења. Ови типови
+// прате оно што о студији враћа сервер; клијент ни овде ништа не одлучује.
+
+export type Phase = "T0" | "vezbanje" | "T30" | "T90";
+export type MeasurementPhase = "T0" | "T30" | "T90";
+export type StudyArm = "eksperimentalna" | "kontrolna";
+
+export type StudySettings = {
+  currentPhase: Phase | null;
+  examOpen: boolean;
+  practiceOpen: boolean;
+  forms: { A: string | null; B: string | null; C: string | null };
+  updatedAt: string;
+  options?: {
+    phases: Phase[];
+    measurementPhases: MeasurementPhase[];
+    forms: ("A" | "B" | "C")[];
+    arms: StudyArm[];
+    rotationGroups: number[];
+    exams: { key: string; label: string }[];
+  };
+};
+
+export type CompletionRow = {
+  id: number;
+  fullName: string;
+  researchId: string | null;
+  classGroup: string | null;
+  studyArm: StudyArm | null;
+  rotationGroup: number | null;
+  consentResearch: boolean;
+  practiceCount: number;
+  practiceMs: number;
+  measurements: Record<
+    MeasurementPhase,
+    { done: true; percentage: number; at: string } | { done: false; expectedForm: string | null }
+  >;
+};
+
+export type Completion = {
+  currentPhase: Phase | null;
+  examOpen: boolean;
+  rows: CompletionRow[];
+};
+
+export type ResearchAttempt = {
+  id: number;
+  userId: number;
+  fullName: string;
+  researchId: string | null;
+  examKey: string | null;
+  level: Level | null;
+  area: Area | null;
+  phase: Phase | null;
+  form: string | null;
+  percentage: number;
+  durationMs: number | null;
+  invalidatedAt: string | null;
+  invalidatedReason: string | null;
+  createdAt: string;
+};
+
+/**
+ * Подаци о уређају колико треба за тумачење (нпр. да ли је рађено на телефону).
+ * IP адресу клијент не шаље, а сервер је ни не бележи.
+ */
+export function clientInfo() {
+  return {
+    userAgent: navigator.userAgent,
+    screen: `${window.screen.width}x${window.screen.height}`,
+    mobile: window.matchMedia("(max-width: 767px)").matches,
+  };
+}

@@ -33,12 +33,23 @@ export default function CatalogPage() {
         </p>
       </header>
 
+      {/*
+        Вежбање је интервенција у студији; контролна грана га не добија. Уместо
+        да екран остане празан или да дугмад ништа не раде, ученик добија разлог
+        — саму заштиту носи сервер, не ово што се овде приказује.
+      */}
+      {!catalog.practiceAllowed ? (
+        <p className="rounded-xl border border-border bg-card px-5 py-4 text-[15px] leading-relaxed">
+          {catalog.practiceReason}
+        </p>
+      ) : null}
+
       {catalog.levels.map((level) => (
         <section key={level.key}>
           <h2 className="mb-3 text-lg font-semibold">{level.label}</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {level.areas.map((area) => {
-              const empty = area.questionCount === 0;
+              const empty = area.questionCount === 0 || !catalog.practiceAllowed;
               return (
                 <button
                   key={area.key}

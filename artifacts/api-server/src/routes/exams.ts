@@ -1,13 +1,69 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, quizAttempts } from "@workspace/db";
 import { examByKey, examSummaries } from "../data/exams";
 import { isScored } from "../data/types";
 import { revealQuestion, sanitizeQuestion } from "../lib/scoring";
 import { scoreExam, scoreExamAnswer } from "../lib/exam-scoring";
+import { recordItems, sanitizeClientInfo } from "../lib/attempt-items";
+import { assignedExam, canMeasure, getSettings, phaseForAttempt } from "../lib/study";
 import { requireAuth, type AuthedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
+
+/**
+ * Мерење се разликује од вежбања свиме што га чини мерењем: ради се само кад
+ * истраживач отвори термин, само онај тест који је том испитанику додељен
+ * ротацијом, и само једном.
+ *
+ * Ако испитаник није у студији (нема грану), тестови остају обичне вежбе са
+ * претходних испита и ништа од овога га не спречава.
+ */
+async function denyMeasurement(
+  user: AuthedRequest["user"],
+  examKey: string,
+): Promise<{ status: number; message: string } | null> {
+  if (user.role === "admin") return null;
+  if (!user.studyArm) return null;
+
+  const settings = await getSettings();
+
+  const window = canMeasure(settings);
+  if (!window.ok) return { status: 403, message: window.reason };
+
+  const assigned = assignedExam(user, settings);
+  if (!assigned) {
+    return {
+      status: 403,
+      message: "Теби још није додељен тест за ову фазу. Јави се наставнику.",
+    };
+  }
+  if (assigned.examKey !== examKey) {
+    // Да испитаник може да узме туђу форму, уравнотежење би пало.
+    return { status: 403, message: "Ово није тест који је теби додељен." };
+  }
+
+  const [already] = await db
+    .select({ id: quizAttempts.id })
+    .from(quizAttempts)
+    .where(
+      and(
+        eq(quizAttempts.userId, user.id),
+        eq(quizAttempts.examKey, examKey),
+        eq(quizAttempts.phase, settings.currentPhase!),
+        isNull(quizAttempts.invalidatedAt),
+      ),
+    )
+    .limit(1);
+
+  if (already) {
+    // Кроз прво мерење се пролази само једном; понављање док не испадне добро
+    // уништава податак.
+    return { status: 409, message: "Овај тест си већ радио у овој фази." };
+  }
+
+  return null;
+}
 
 /** Листа тестова са претходних завршних испита. */
 router.get("/exams", requireAuth, async (req, res) => {
@@ -35,12 +91,20 @@ router.get("/exams", requireAuth, async (req, res) => {
   );
 });
 
-router.get("/exams/:key", requireAuth, (req, res) => {
+router.get("/exams/:key", requireAuth, async (req, res) => {
+  const user = (req as AuthedRequest).user;
   const exam = examByKey(String(req.params.key));
   if (!exam) {
     res.status(404).json({ message: "Тест није пронађен." });
     return;
   }
+
+  const denial = await denyMeasurement(user, exam.key);
+  if (denial) {
+    res.status(denial.status).json({ message: denial.message });
+    return;
+  }
+
   res.json({
     key: exam.key,
     year: exam.year,
@@ -63,7 +127,21 @@ router.post("/exams/:key/attempts", requireAuth, async (req, res) => {
       return;
     }
 
-    const body = req.body as { answers?: { questionId: number; answer: string }[] };
+    const denial = await denyMeasurement(user, exam.key);
+    if (denial) {
+      res.status(denial.status).json({ message: denial.message });
+      return;
+    }
+
+    const settings = await getSettings();
+    const assigned = assignedExam(user, settings);
+
+    const body = req.body as {
+      answers?: { questionId: number; answer: string; timeSpentMs?: number }[];
+      startedAt?: string;
+      durationMs?: number;
+      clientInfo?: unknown;
+    };
     const given = Array.isArray(body.answers) ? body.answers : [];
 
     const allowed = new Set(exam.questions.map((q) => q.id));
@@ -91,8 +169,36 @@ router.post("/exams/:key/attempts", requireAuth, async (req, res) => {
         pointsEarned: earned.toFixed(2),
         pointsTotal: total.toFixed(2),
         answers: given,
+        // Фазу и форму уписује сервер; клијент их не шаље.
+        phase: phaseForAttempt(settings, "exam"),
+        form: assigned?.form ?? null,
+        startedAt: body.startedAt ? new Date(body.startedAt) : null,
+        durationMs: typeof body.durationMs === "number" ? Math.round(body.durationMs) : null,
+        clientInfo: sanitizeClientInfo(body.clientInfo),
       })
       .returning();
+
+    await recordItems(
+      attempt!.id,
+      user.id,
+      exam.questions.map((q, i) => {
+        const answer = answerMap.get(q.id) ?? "";
+        const points = isScored(q) ? scoreExamAnswer(q, answer) : null;
+        return {
+          questionId: q.id,
+          questionType: q.type,
+          level: q.level,
+          area: q.area,
+          textKey: q.textKey ?? null,
+          answerRaw: answer,
+          isCorrect: points !== null && points >= q.points,
+          pointsEarned: points,
+          pointsMax: isScored(q) ? q.points : null,
+          timeSpentMs: given.find((a) => a.questionId === q.id)?.timeSpentMs ?? null,
+          position: i + 1,
+        };
+      }),
+    );
 
     res.json({
       id: attempt!.id,

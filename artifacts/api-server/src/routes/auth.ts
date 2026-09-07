@@ -20,17 +20,17 @@ router.post("/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body as { username: string; password: string };
     if (!username || !password) {
-      res.status(400).json({ message: "Потребно је корисничко ime и лозинка." });
+      res.status(400).json({ message: "Потребно је корисничко име и лозинка." });
       return;
     }
     const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
     if (!user || !user.active) {
-      res.status(401).json({ message: "Погрешно корисничко ime или лозинка." });
+      res.status(401).json({ message: "Погрешно корисничко име или лозинка." });
       return;
     }
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
-      res.status(401).json({ message: "Погрешно корисничко ime или лозинка." });
+      res.status(401).json({ message: "Погрешно корисничко име или лозинка." });
       return;
     }
     res.json({ token: createToken(user), user: publicUser(user) });

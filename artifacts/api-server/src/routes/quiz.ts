@@ -5,6 +5,8 @@ import { questions, questionById } from "../data/questions";
 import { AREAS, LEVELS, isScored, type Area, type Level } from "../data/types";
 import { texts } from "../data/texts";
 import { revealQuestion, sanitizeQuestion, scoreAnswer } from "../lib/scoring";
+import { recordItems, sanitizeClientInfo } from "../lib/attempt-items";
+import { canPractice, getSettings, phaseForAttempt } from "../lib/study";
 import { requireAuth, type AuthedRequest } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -39,6 +41,11 @@ async function practiceAttempts(userId: number) {
 router.get("/catalog", requireAuth, async (req, res) => {
   const user = (req as AuthedRequest).user;
   const attempts = await practiceAttempts(user.id);
+  const settings = await getSettings();
+
+  // Каталог се приказује и кад вежбање није допуштено, али са разлогом —
+  // ученик треба да зна зашто, а не да наиђе на празан екран.
+  const practice = canPractice(user, settings);
 
   const best = (level: Level, area: Area) => {
     const matching = attempts.filter((a) => a.level === level && a.area === area);
@@ -47,6 +54,8 @@ router.get("/catalog", requireAuth, async (req, res) => {
   };
 
   res.json({
+    practiceAllowed: practice.ok,
+    practiceReason: practice.ok ? null : practice.reason,
     levels: LEVELS.map((level) => ({
       key: level.key,
       label: level.label,
@@ -77,7 +86,18 @@ router.get("/catalog", requireAuth, async (req, res) => {
 });
 
 // ── Задаци за вежбање ─────────────────────────────────────────────────────
-router.get("/questions", requireAuth, (req, res) => {
+router.get("/questions", requireAuth, async (req, res) => {
+  const user = (req as AuthedRequest).user;
+  const settings = await getSettings();
+
+  // Иста провера као при предаји: без ње би контролна грана могла да вежба
+  // тако што сама позове ову путању.
+  const allowedToPractice = canPractice(user, settings);
+  if (!allowedToPractice.ok) {
+    res.status(403).json({ message: allowedToPractice.reason });
+    return;
+  }
+
   const { level, area, text } = req.query as Record<string, string | undefined>;
 
   if (text) {
@@ -139,11 +159,24 @@ router.post("/check", requireAuth, (req, res) => {
 router.post("/attempts", requireAuth, async (req, res) => {
   try {
     const user = (req as AuthedRequest).user;
+    const settings = await getSettings();
+
+    // Скривање дугмета није заштита: контролна грана овде добија 403, ма како
+    // до путање дошла.
+    const allowedToPractice = canPractice(user, settings);
+    if (!allowedToPractice.ok) {
+      res.status(403).json({ message: allowedToPractice.reason });
+      return;
+    }
+
     const body = req.body as {
       level?: string;
       area?: string;
       textKey?: string;
-      answers?: { questionId: number; answer: string }[];
+      answers?: { questionId: number; answer: string; timeSpentMs?: number }[];
+      startedAt?: string;
+      durationMs?: number;
+      clientInfo?: unknown;
     };
 
     const given = Array.isArray(body.answers) ? body.answers : [];
@@ -194,8 +227,35 @@ router.post("/attempts", requireAuth, async (req, res) => {
         percentage,
         passed: percentage >= 50,
         answers: given,
+        // Фазу уписује сервер из подешавања студије, никад клијент: иначе би
+        // ученик свој рад прогласио којом хоће фазом.
+        phase: phaseForAttempt(settings, "practice"),
+        startedAt: body.startedAt ? new Date(body.startedAt) : null,
+        durationMs: typeof body.durationMs === "number" ? Math.round(body.durationMs) : null,
+        clientInfo: sanitizeClientInfo(body.clientInfo),
       })
       .returning();
+
+    // Резултат по задатку — оно из чега се после чита шта је заборављено.
+    // Уписује се и за незбодоване задатке (`open`), да се зна да су виђени.
+    await recordItems(
+      attempt!.id,
+      user.id,
+      relevant.map((q, i) => {
+        const answer = answerMap.get(q.id) ?? "";
+        return {
+          questionId: q.id,
+          questionType: q.type,
+          level: q.part === 2 ? null : q.level,
+          area: q.part === 2 ? null : q.area,
+          textKey: q.textKey ?? null,
+          answerRaw: answer,
+          isCorrect: isScored(q) ? scoreAnswer(q, answer) : false,
+          timeSpentMs: given.find((a) => a.questionId === q.id)?.timeSpentMs ?? null,
+          position: i + 1,
+        };
+      }),
+    );
 
     // Тек сада, пошто је одговор уписан, клијент сме да добије тачне одговоре.
     res.json({

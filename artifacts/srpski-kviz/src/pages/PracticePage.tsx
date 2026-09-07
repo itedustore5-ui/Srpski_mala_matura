@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { QuestionView } from "@/components/QuestionView";
 import {
   api,
   AREA_LABELS,
+  clientInfo,
   LEVEL_LABELS,
   type AnswerMap,
   type Area,
@@ -36,6 +37,9 @@ export default function PracticePage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [text, setText] = useState<SelectedText | null>(null);
   const [textOpen, setTextOpen] = useState(true);
+  // Ознака коју сервер оставља у телу текста док одломак није преписан из
+  // збирке; види `ZA_LEPLJENJE` у `api-server/src/data/texts.ts`.
+  const textPending = text?.body.some((p) => p.includes("[[ЗА ЛЕПЉЕЊЕ]]")) ?? false;
 
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<AnswerMap>({});
@@ -45,6 +49,23 @@ export default function PracticePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Време по задатку: дуго задржавање уз тачан одговор значи несигурно знање,
+  // и такве ставке прве „падну“ на каснијем мерењу. Мери се задржавање на
+  // екрану, не тачно време размишљања — груба, али једина доступна мера.
+  const sessionStart = useRef(new Date().toISOString());
+  const enteredAt = useRef(Date.now());
+  const timePerQuestion = useRef<Record<number, number>>({});
+
+  useEffect(() => {
+    const shown = questions[current]?.id;
+    enteredAt.current = Date.now();
+    return () => {
+      if (shown === undefined) return;
+      const spent = Date.now() - enteredAt.current;
+      timePerQuestion.current[shown] = (timePerQuestion.current[shown] ?? 0) + spent;
+    };
+  }, [current, questions]);
   const [finished, setFinished] = useState<AttemptResult | null>(null);
 
   useEffect(() => {
@@ -109,9 +130,21 @@ export default function PracticePage() {
     setBusy(true);
     setError("");
     try {
+      // Задржавање на задатку који је тренутно на екрану још није уписано у
+      // ref (то ради чишћење ефекта), па се додаје овде.
+      const shown = questions[current]?.id;
+      if (shown !== undefined) {
+        timePerQuestion.current[shown] =
+          (timePerQuestion.current[shown] ?? 0) + (Date.now() - enteredAt.current);
+      }
+
       const payload = questions
         .filter((q) => checks[q.id])
-        .map((q) => ({ questionId: q.id, answer: answers[q.id] ?? "" }));
+        .map((q) => ({
+          questionId: q.id,
+          answer: answers[q.id] ?? "",
+          timeSpentMs: timePerQuestion.current[q.id] ?? null,
+        }));
 
       if (payload.length === 0) {
         navigate("/vezbanje");
@@ -120,7 +153,14 @@ export default function PracticePage() {
 
       const attempt = await api<AttemptResult>("/attempts", {
         method: "POST",
-        body: JSON.stringify({ answers: payload }),
+        body: JSON.stringify({
+          answers: payload,
+          // Збир вежбања између мерења је доза интервенције; без ње се може
+          // рећи само да је резултат опао, што би се десило и без апликације.
+          startedAt: sessionStart.current,
+          durationMs: Date.now() - new Date(sessionStart.current).getTime(),
+          clientInfo: clientInfo(),
+        }),
       });
       setFinished(attempt);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -219,14 +259,26 @@ export default function PracticePage() {
           </button>
           {textOpen ? (
             <div className="space-y-3 border-t border-border px-5 py-4 text-[15px] leading-relaxed">
-              {text.body.map((paragraph, i) => (
-                <p key={i} className="whitespace-pre-line">
-                  {paragraph}
+              {textPending ? (
+                // Док одломак није преписан, ученику се каже где да га прочита.
+                // Приказ саме ознаке за лепљење изгледао би као грешка у тексту.
+                <p>
+                  Овај одломак још није унет у апликацију. Прочитај га у збирци
+                  {text.note ? ` — ${text.note}` : "."} Задаци испод раде и без
+                  њега, али их решавај тек кад прочиташ текст.
                 </p>
-              ))}
-              {text.note ? (
-                <p className="text-sm italic text-muted-foreground">{text.note}</p>
-              ) : null}
+              ) : (
+                <>
+                  {text.body.map((paragraph, i) => (
+                    <p key={i} className="whitespace-pre-line">
+                      {paragraph}
+                    </p>
+                  ))}
+                  {text.note ? (
+                    <p className="text-sm italic text-muted-foreground">{text.note}</p>
+                  ) : null}
+                </>
+              )}
             </div>
           ) : null}
         </section>

@@ -50,11 +50,24 @@ Iz `artifacts/api-server`, ili sa `pnpm --filter @workspace/api-server run <x>`:
 |---|---|
 | `verify:scoring` | proverava sve zadatke: strukturu, bodovanje i da tačan odgovor ne curi ka klijentu |
 | `verify:exams` | isto za testove sa prethodnih završnih ispita + zbir poena |
+| `verify:study` | nacrt studije: latinski kvadrat, veličine grupa, forme, pravila izvoza |
+| `verify:tekst` | da nijedan tekst u kodu ne meša ćirilicu i latinicu |
+| `probni-prolaz` | ceo tok kroz pokrenut server, kao pravi ispitanici; briše za sobom |
 | `migrate` | primenjuje SQL migracije iz `lib/db/migrations/` |
 | `seed` | prvi admin nalog (`ADMIN_INITIAL_PASSWORD`) |
 | `reset-password <korisnik>` | promena lozinke (`NEW_PASSWORD`); bez argumenta lista naloge |
+| `backup` | sve tabele u lokalni folder; pokreće se posle svakog merenja |
 
-Pre commit-a uvek: `pnpm run typecheck && pnpm --filter @workspace/api-server run verify:scoring && pnpm --filter @workspace/api-server run verify:exams`
+Pre commit-a uvek:
+
+```bash
+pnpm run typecheck
+pnpm --filter @workspace/api-server run verify:scoring
+pnpm --filter @workspace/api-server run verify:exams
+pnpm --filter @workspace/api-server run verify:tekst
+```
+
+Pre merenja još i `verify:study` i `probni-prolaz` (traži pokrenut server).
 
 Skripte čitaju `.env` iz korena repoa (`src/lib/load-env.ts`).
 
@@ -68,12 +81,17 @@ artifacts/api-server/     Express 5, Drizzle, HMAC-SHA256 tokeni
   src/data/exams/           testovi sa prethodnih završnih ispita
   src/lib/scoring.ts        bodovanje vežbanja + sanitizacija
   src/lib/exam-scoring.ts   bodovanje ispita (delimični poeni)
-  src/routes/               auth, quiz, exams, admin, health
-  scripts/                  verify:scoring, verify:exams, migrate, seed
+  src/lib/study.ts          faze, grane, rotacija formi, ko sme šta
+  src/lib/attempt-items.ts  upis rezultata po zadatku
+  src/lib/csv.ts            izvoz: BOM, broj kolona, neutralizacija formula
+  src/routes/               auth, quiz, exams, admin, research, export, health
+  scripts/                  verify:*, migrate, seed, backup
 artifacts/srpski-kviz/    React 19 + Vite, App.tsx + pages/
   public/images/            prilozi uz zadatke (plakat, obrazac, rečnik)
 lib/db/                   Drizzle šema + SQL migracije
 docs/DEPLOY.md            Render + Postgres, korak po korak
+docs/ISTRAZIVANJE.md      aplikacija kao instrument merenja — pročitati pre
+                          diranja faza, rotacije ili izvoza
 ```
 
 ## Tipovi zadataka
@@ -108,6 +126,19 @@ pa je prosek preko oba besmislen.
 
 **Migracije su idempotentne** (`IF NOT EXISTS`). Nova ide kao
 `lib/db/migrations/000N_ime.sql`, uz izmenu Drizzle šeme.
+
+**Kad se učenje i merenje sukobe, prednost ima merenje.** Aplikacija je i alat
+za učenje i instrument istraživanja. Loš prikaz se popravi sutra; pogrešno
+prikupljen podatak se ne popravlja nikad, jer ispitanik kroz prvo merenje
+prolazi samo jednom. Detalji u `docs/ISTRAZIVANJE.md`.
+
+**Fazu, formu i pravo pristupa određuje server, nikad telo zahteva.** Inače bi
+učenik svoj rad proglasio kojom hoće fazom, uzeo tuđu formu ili ponavljao test
+dok ne ispadne dobro. Skrivanje dugmeta nije zaštita — provera stoji na samoj
+putanji (`canPractice`, `canMeasure` u `src/lib/study.ts`).
+
+**`attempt_items` se piše uz svaki pokušaj.** Iz pokušaja se zna koliko je neko
+znao, odatle šta je znao — a to se naknadno ne može rekonstruisati.
 
 **Izmišljeni testovi se ne unose.** Lista testova sa prethodnih ispita je prazna
 dok se ne unesu zvanični — učeniku bi izmišljen test delovao kao original.

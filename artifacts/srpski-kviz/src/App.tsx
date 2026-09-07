@@ -6,6 +6,7 @@ import CatalogPage from "@/pages/CatalogPage";
 import PracticePage from "@/pages/PracticePage";
 import ScoreboardPage from "@/pages/ScoreboardPage";
 import AdminPage from "@/pages/AdminPage";
+import ResearchPage from "@/pages/ResearchPage";
 import { ExamPage, ExamsPage } from "@/pages/ExamsPage";
 import { api, TOKEN_KEY, type AuthUser } from "@/lib/api";
 
@@ -114,7 +115,10 @@ function Shell({
   children: React.ReactNode;
 }) {
   const [location, navigate] = useLocation();
-  const links = user.role === "admin" ? [...NAV, { href: "/admin", label: "Админ" }] : NAV;
+  const links =
+    user.role === "admin"
+      ? [...NAV, { href: "/admin", label: "Админ" }, { href: "/studija", label: "Студија" }]
+      : NAV;
 
   return (
     <div className="min-h-screen">
@@ -181,6 +185,11 @@ export default function App() {
         <Route path="/rang-lista">{() => <ScoreboardPage />}</Route>
         <Route path="/admin">
           {() => (auth.user!.role === "admin" ? <AdminPage /> : <DashboardPage user={auth.user!} />)}
+        </Route>
+        <Route path="/studija">
+          {() =>
+            auth.user!.role === "admin" ? <ResearchPage /> : <DashboardPage user={auth.user!} />
+          }
         </Route>
         <Route component={NotFound} />
       </Switch>
